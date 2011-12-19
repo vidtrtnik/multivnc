@@ -1,0 +1,25 @@
+
+Okay here it comes:
+
+1. get libvncclient from http://libvncserver.sf.net and unpack
+
+2. get ndk toolchain for target by following $NDK_DIR/docs/STANDALONE_TOOLCHAIN.HTML step 3
+
+3. configure libvncclient:
+
+	./configure --host=arm-linux-androideabi --disable-static --enable-shared --prefix=/tmp/android
+	
+   (if this does not work, see http://stackoverflow.com/questions/4594736/configure-does-not-recognize-androideabi)
+	 
+4. make
+
+5. make install
+
+6. copy stuff libs and headers from install location to prebuilt-libs.
+
+7. rename libvnclient.so.* to libvncclient.so
+
+8. remove the soversion by doing a
+
+	 rpl -R -e libvncclient.so.0 "libvncclient.so\x00\x00" libvncclient.so
+

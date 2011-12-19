@@ -574,6 +574,16 @@ public class VncCanvasActivity extends Activity {
 		notificationToast = Toast.makeText(this,  "", Toast.LENGTH_SHORT);
 		notificationToast.setGravity(Gravity.TOP, 0, 0);
 	}
+	
+	
+	 /* 
+     * this is used to load our native libraries. order is important!!!
+     */
+    static {
+    	System.loadLibrary("vncclient");
+    	System.loadLibrary("jnivncconn");
+    }
+	
 
 	/**
 	 * Set modes on start to match what is specified in the ConnectionBean;
