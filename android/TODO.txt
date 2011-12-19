@@ -1,2 +1,13 @@
 
-* port to libvncclient
+* port to libvncclient:
+  - replace wx stuff with STL/android equivalents. possible?
+     +   wxthread -> pthreads
+     +   NOTIFY events -> java callbacks
+     +   wxString -> jstring
+     +/- wxArrayString -> vector<string>, which would need O(n) conversion to Java ArrayList<String>
+     +/- wxTimer/wxStopwathc -> pthreads emulation
+     
+  OR
+  - port c++/wx stuff to java and leave only C jni stubs?
+  
+  

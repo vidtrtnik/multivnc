@@ -21,18 +21,15 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
 */
 
-#if 0
 
-#include <cstdarg>
+
+#include <jni.h>
+#include <stdarg.h>
 #include <cerrno>
-#include <wx/intl.h>
-#include <wx/log.h>
-#include <wx/socket.h>
-#ifdef __WIN32__
-#include <winsock.h>
-#else
+#include <android/log.h>
 #include <arpa/inet.h>
-#endif
+
+#if 0
 #include "VNCConn.h"
 
 
