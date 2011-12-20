@@ -6,6 +6,8 @@
      +   wxString -> jstring
      +/- wxArrayString -> vector<string>, which would need O(n) conversion to Java ArrayList<String>
      +/- wxTimer/wxStopwathc -> pthreads emulation
+     +/- drawing: native androidbitmap access since api level 8
+     +   drawing: glsurfaceview
      
   OR
   - port c++/wx stuff to java and leave only C jni stubs?
