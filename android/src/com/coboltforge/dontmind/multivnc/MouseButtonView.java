@@ -114,14 +114,10 @@ public class MouseButtonView extends View {
 					float newRemoteX = canvas.mouseX + deltaX;
 					float newRemoteY = canvas.mouseY + deltaY;
 
-					try {
-						canvas.rfb.writePointerEvent((int)newRemoteX, (int)newRemoteY, e.getMetaState(), 1 << (buttonId-1));
-					} catch (IOException ex) {
-						ex.printStackTrace();
-					}
+					canvas.vncConn.sendPointerEvent((int)newRemoteX, (int)newRemoteY, e.getMetaState(), 1 << (buttonId-1));
 
 					// update view
-					// FIXME use only canvas, not rfb directly
+					
 					canvas.mouseX = (int) newRemoteX;
 					canvas.mouseY = (int) newRemoteY;
 					canvas.panToMouse();
@@ -217,12 +213,7 @@ public class MouseButtonView extends View {
 			setBackgroundDrawable(dfltBackground);
 		}
 			
-
-		try {
-			canvas.rfb.writePointerEvent(canvas.mouseX, canvas.mouseY, e.getMetaState(), pointerMask);
-		} catch (IOException ex) {
-			ex.printStackTrace();
-		}
+		canvas.vncConn.sendPointerEvent(canvas.mouseX, canvas.mouseY, e.getMetaState(), pointerMask);
 	}
 
 

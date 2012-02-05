@@ -398,7 +398,6 @@ public class VncCanvasActivity extends Activity {
 		 */
 		@Override
 		public boolean onDown(MotionEvent e) {
-			panner.stop();
 			return true;
 		}
 	}
@@ -411,7 +410,6 @@ public class VncCanvasActivity extends Activity {
 	private ConnectionBean connection;
 
 	ZoomControls zoomer;
-	Panner panner;
 	TouchpadInputHandler touchPad;
 	ViewGroup mousebuttons;
 	TouchPointView touchpoints;
@@ -555,7 +553,6 @@ public class VncCanvasActivity extends Activity {
 			}
 
 		});
-		panner = new Panner(this, vncCanvas.handler);
 
 		touchPad =  new TouchpadInputHandler();
 		
@@ -671,7 +668,6 @@ public class VncCanvasActivity extends Activity {
 
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item) {
-		vncCanvas.afterMenu = true;
 		switch (item.getItemId()) {
 		case R.id.itemInfo:
 			vncCanvas.showConnectionInfo();
@@ -683,7 +679,7 @@ public class VncCanvasActivity extends Activity {
 			selectColorModel();
 			return true;
 		case R.id.itemToggleFramebufferUpdate:
-			if(vncCanvas.toggleFramebufferUpdates()) // view enabled
+			if(vncCanvas.vncConn.toggleFramebufferUpdates()) // view enabled
 			{
 				vncCanvas.setVisibility(View.VISIBLE);
 				touchpoints.setVisibility(View.GONE);
@@ -757,7 +753,7 @@ public class VncCanvasActivity extends Activity {
 	protected void onDestroy() {
 		super.onDestroy();
 		if (isFinishing()) {
-			vncCanvas.closeConnection();
+			vncCanvas.vncConn.shutdown();
 			vncCanvas.onDestroy();
 			database.close();
 		}
@@ -786,7 +782,7 @@ public class VncCanvasActivity extends Activity {
 			.setMessage(getString(R.string.disconnect_question))
 			.setPositiveButton(getString(R.string.yes), new DialogInterface.OnClickListener() {
 				public void onClick(DialogInterface dialog, int whichButton) {
-					vncCanvas.closeConnection();
+					vncCanvas.vncConn.shutdown();
 					finish();
 				}
 			}).setNegativeButton(getString(R.string.no), new DialogInterface.OnClickListener() {
@@ -830,7 +826,7 @@ public class VncCanvasActivity extends Activity {
 		for (int i = 0; i < choices.length; i++) {
 			COLORMODEL cm = COLORMODEL.values()[i];
 			choices[i] = cm.toString();
-			if (vncCanvas.isColorModel(cm))
+			if(cm.equals(vncCanvas.vncConn.getColorModel()))
 				currentSelection = i;
 		}
 
@@ -839,7 +835,7 @@ public class VncCanvasActivity extends Activity {
 		    public void onClick(DialogInterface dialog, int item) {
 		    	dialog.dismiss();
 				COLORMODEL cm = COLORMODEL.values()[item];
-				vncCanvas.setColorModel(cm);
+				vncCanvas.vncConn.setColorModel(cm);
 				connection.setColorModel(cm.nameString());
 				Toast.makeText(VncCanvasActivity.this,
 						"Updating Color Model to " + cm.toString(),

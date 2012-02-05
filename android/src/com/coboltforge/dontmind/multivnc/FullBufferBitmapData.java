@@ -32,10 +32,10 @@ class FullBufferBitmapData extends AbstractBitmapData {
 		super(p, c);
 		framebufferwidth=rfb.framebufferWidth;
 		framebufferheight=rfb.framebufferHeight;
-		bitmapwidth=framebufferwidth;
-		bitmapheight=framebufferheight;
+		bitmapwidth= Utils.nextPow2(framebufferwidth);
+		bitmapheight=Utils.nextPow2(framebufferheight);
 		android.util.Log.i("FBBM", "bitmapsize = ("+bitmapwidth+","+bitmapheight+")");
-		bitmapPixels = new int[framebufferwidth * framebufferheight];
+		bitmapPixels = new int[bitmapwidth * bitmapheight];
 	}
 
 	/* (non-Javadoc)
@@ -59,14 +59,14 @@ class FullBufferBitmapData extends AbstractBitmapData {
 		int offset = offset(x,y);
 		if (w > 10)
 		{
-			for (int j = 0; j < h; j++, offset += framebufferwidth)
+			for (int j = 0; j < h; j++, offset += bitmapwidth)
 			{
 				Arrays.fill(bitmapPixels, offset, offset + w, color);
 			}
 		}
 		else
 		{
-			for (int j = 0; j < h; j++, offset += framebufferwidth - w)
+			for (int j = 0; j < h; j++, offset += bitmapwidth - w)
 			{
 				for (int k = 0; k < w; k++, offset++)
 				{
@@ -81,7 +81,7 @@ class FullBufferBitmapData extends AbstractBitmapData {
 	 */
 	@Override
 	int offset(int x, int y) {
-		return x + y * framebufferwidth;
+		return x + y * bitmapwidth;
 	}
 
 	/* (non-Javadoc)
