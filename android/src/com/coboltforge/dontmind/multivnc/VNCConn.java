@@ -100,7 +100,13 @@ public class VNCConn {
 		handleRREPaint = new Paint();
 		handleRREPaint.setStyle(Style.FILL);
 
+		if(Utils.DEBUG()) Log.d(TAG, this + " constructed!");
 	}
+	
+	protected void finalize() {
+		if(Utils.DEBUG()) Log.d(TAG, this + " finalized!");
+	}
+	
 
 	/*
 		    to make a connection, call
@@ -147,7 +153,7 @@ public class VNCConn {
 		final ProgressDialog pd = ProgressDialog.show(parent.getContext(), "Connecting...", "Establishing handshake.\nPlease wait...", true, true, new DialogInterface.OnCancelListener() {
 			@Override
 			public void onCancel(DialogInterface dialog) {
-				closeConnection();
+				shutdown();
 				parent.handler.post(new Runnable() {
 					public void run() {
 						Utils.showErrorMessage(parent.getContext(), "VNC connection aborted!");
@@ -205,14 +211,16 @@ public class VNCConn {
 		
 		Log.d(TAG, "shutting down");
 		
-		closeConnection();
+		maintainConnection = false;
 		
 		try {
 			bitmapData.dispose();
+			rfb.close(); // close immediatly
 		}
 		catch(Exception e) {
 		}
 		bitmapData = null;
+		
 	}
 
 	
@@ -275,6 +283,13 @@ public class VNCConn {
 		      case 140: 						  key = 0xffc7; break; // F10
 		      case 141: 						  key = 0xffc8; break; // F11
 		      case 142: 						  key = 0xffc9; break; // F12
+		      case 124:							  key = 0xff63; break; // Insert
+		      case 112: 					      key = 0xffff; break; // Delete
+		      case 122: 					      key = 0xff50; break; // Home
+		      case 123: 					      key = 0xff57; break; // End
+		      case  92: 					      key = 0xff55; break; // PgUp
+		      case  93: 					      key = 0xff56; break; // PgDn
+
 
 		      default: 							  
 		    	  key = evt.getUnicodeChar();
@@ -547,11 +562,6 @@ public class VNCConn {
 	
 
 
-	private void closeConnection() {
-		maintainConnection = false;
-	}
-
-
 
 	private void processNormalProtocol(final Context context, ProgressDialog pd, final Runnable setModes) throws Exception {
 		try {
@@ -689,6 +699,7 @@ public class VNCConn {
 		} finally {
 			Log.v(TAG, "Closing VNC Connection");
 			rfb.close();
+			System.gc();
 		}
 	}
 	
