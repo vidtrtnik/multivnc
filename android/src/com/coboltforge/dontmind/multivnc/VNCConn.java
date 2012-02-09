@@ -40,6 +40,14 @@ public class VNCConn {
 	// Runtime control flags
 	private boolean maintainConnection = true;
 	private boolean framebufferUpdatesEnabled = true;
+	
+	 // fastrequest stuff
+	private int fastrequest_interval = 0;
+	// per-connection error string
+	private String err;
+	
+	// the native rfbclient
+	private long rfbClient;
 
 	// Internal bitmap data
 	private AbstractBitmapData bitmapData;
@@ -97,9 +105,8 @@ public class VNCConn {
      * this is used to load our native libraries. order is important!!!
      */
     static {
-    	System.loadLibrary("gnustl_shared");
     	System.loadLibrary("vncclient");
-    	System.loadLibrary("jnivncconn");
+    	System.loadLibrary("vncconn");
     }
     
 
@@ -107,6 +114,8 @@ public class VNCConn {
 		parent = p;
 		handleRREPaint = new Paint();
 		handleRREPaint.setStyle(Style.FILL);
+		
+		construct();
 
 		if(Utils.DEBUG()) Log.d(TAG, this + " constructed!");
 	}
@@ -156,7 +165,10 @@ public class VNCConn {
 		
 		connSettings = bean;
 		this.pendingColorModel = COLORMODEL.valueOf(bean.getColorModel());
-
+		
+		setup(8, 3, 4);
+		
+		
 		// Startup the RFB thread with a nifty progess dialog
 		final ProgressDialog pd = ProgressDialog.show(parent.getContext(), "Connecting...", "Establishing handshake.\nPlease wait...", true, true, new DialogInterface.OnCancelListener() {
 			@Override
@@ -223,6 +235,7 @@ public class VNCConn {
 		
 		try {
 			bitmapData.dispose();
+			cleanup();
 			rfb.close(); // close immediatly
 		}
 		catch(Exception e) {
@@ -414,8 +427,12 @@ public class VNCConn {
 	}
 	
 	
+	private native int construct();
+	private native int setup(int bitsPerSample,int samplesPerPixel, int bytesPerPixel);
+	private native void cleanup();
 	
 
+	
 	private void connectAndAuthenticate(String us,String pw) throws Exception {
 		Log.i(TAG, "Connecting to " + connSettings.getAddress() + ", port " + connSettings.getPort() + "...");
 
