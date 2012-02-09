@@ -93,7 +93,15 @@ public class VNCConn {
 	
 
 
-
+    /* 
+     * this is used to load our native libraries. order is important!!!
+     */
+    static {
+    	System.loadLibrary("gnustl_shared");
+    	System.loadLibrary("vncclient");
+    	System.loadLibrary("jnivncconn");
+    }
+    
 
 	public VNCConn(VncCanvas p) {
 		parent = p;

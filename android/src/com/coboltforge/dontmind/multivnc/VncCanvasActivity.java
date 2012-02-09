@@ -573,15 +573,6 @@ public class VncCanvasActivity extends Activity {
 	}
 	
 	
-	 /* 
-     * this is used to load our native libraries. order is important!!!
-     */
-    static {
-    	System.loadLibrary("gnustl_shared");
-    	System.loadLibrary("vncclient");
-    	System.loadLibrary("jnivncconn");
-    }
-	
 
 	/**
 	 * Set modes on start to match what is specified in the ConnectionBean;
