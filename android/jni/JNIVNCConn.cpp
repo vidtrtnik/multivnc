@@ -533,22 +533,21 @@ void VNCConn::thread_post_unimultichanged_notify()
 }
 
 
-
 void VNCConn::thread_got_update(rfbClient* client,int x,int y,int w,int h)
 {
-  VNCConn* conn = (VNCConn*) rfbClientGetClientData(client, VNCCONN_OBJ_ID); 
-  if(! conn->GetThread()->TestDestroy())
-    {
-      conn->updated_rect.Union(wxRect(x, y, w, h));
+	VNCConn* conn = (VNCConn*) rfbClientGetClientData(client, VNCCONN_OBJ_ID);
+	if(! conn->GetThread()->TestDestroy())
+	{
+		conn->updated_rect.Union(wxRect(x, y, w, h));
 
-      // single (partial) multicast updates are small, so when a big region is updated,
-      // the update notify receiver gets flooded, resulting in way too much cpu load.
-      // thus, when multicasting, we only notify for logic (whole) framebuffer updates.
-      if(!conn->isMulticast())
-	conn->thread_post_update_notify(x, y, w, h);
+		// single (partial) multicast updates are small, so when a big region is updated,
+		// the update notify receiver gets flooded, resulting in way too much cpu load.
+		// thus, when multicasting, we only notify for logic (whole) framebuffer updates.
+		if(!conn->isMulticast())
+			conn->thread_post_update_notify(x, y, w, h);
 
 
-    }
+	}
 }
 
 
@@ -618,14 +617,13 @@ void VNCConn::thread_bell(rfbClient *cl)
   conn->thread_post_bell_notify();
 }
 
-
+#endif
 
 
 // there's no per-connection log since we cannot find out which client
 // called the logger function :-(
-wxArrayString VNCConn::log;
-wxCriticalSection VNCConn::mutex_log;
-bool VNCConn::do_logfile;
+vector<string> VNCConn::log;
+pthread_mutex_t VNCConn::mutex_log;
 
 void VNCConn::thread_logger(const char *format, ...)
 {
@@ -633,53 +631,27 @@ void VNCConn::thread_logger(const char *format, ...)
     return;
 
   // since we're accessing some global things here from different threads
-  wxCriticalSectionLocker lock(mutex_log);
+  pthread_mutex_lock(&mutex_log);
 
-  wxChar timebuf[256];
-  time_t log_clock;
-  time(&log_clock);
-  wxStrftime(timebuf, WXSIZEOF(timebuf), _T("%d/%m/%Y %X "), localtime(&log_clock));
+  va_list args;
 
   // global log string array
-  va_list args;  
-  wxString wx_format(format, wxConvUTF8);
   va_start(args, format);
   char msg[1024];
   vsnprintf(msg, 1024, format, args);
-  log.Add( wxString(timebuf) + wxString(msg, wxConvUTF8));
+  log.push_back(msg);
   va_end(args);
 
-  // global log file
-  if(do_logfile)
-    {
-      FILE* logfile;
-      wxString logfile_str = LOGFILE;
-      // delete logfile on program startup
-      static bool firstrun = 1;
-      if(firstrun)
-	{
-	  remove(logfile_str.char_str());
-	  firstrun = 0;
-	}
-      
-      logfile=fopen(logfile_str.char_str(),"a");    
-      
-      va_start(args, format);
-      fprintf(logfile, wxString(timebuf).mb_str());
-      vfprintf(logfile, format, args);
-      va_end(args);
-
-      fclose(logfile);
-    }
  
   // and stderr
   va_start(args, format);
-  fprintf(stderr, wxString(timebuf).mb_str());
-  vfprintf(stderr, format, args);
+  __android_log_vprint(ANDROID_LOG_INFO, TAG, format, args);
   va_end(args);
+
+  pthread_mutex_unlock(&mutex_log);
 }
 
-
+#if 0
 
 
 
