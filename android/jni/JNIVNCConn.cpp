@@ -26,11 +26,13 @@
 #include <jni.h>
 #include <stdarg.h>
 #include <cerrno>
+#include <sstream>
 #include <android/log.h>
 
 #include "JNIVNCConn.h"
 
-#if 0
+
+#define TAG "JNIVNCConn"
 
 // use some global address
 #define VNCCONN_OBJ_ID (void*)VNCConn::thread_got_update
@@ -46,69 +48,9 @@
 #define BYTESPERPIXEL 4 
 
 
-// define our new notify events!
-DEFINE_EVENT_TYPE(VNCConnIncomingConnectionNOTIFY)
-DEFINE_EVENT_TYPE(VNCConnDisconnectNOTIFY)
-DEFINE_EVENT_TYPE(VNCConnUpdateNOTIFY)
-DEFINE_EVENT_TYPE(VNCConnFBResizeNOTIFY)
-DEFINE_EVENT_TYPE(VNCConnCuttextNOTIFY) 
-DEFINE_EVENT_TYPE(VNCConnBellNOTIFY) 
-DEFINE_EVENT_TYPE(VNCConnUniMultiChangedNOTIFY);
-DEFINE_EVENT_TYPE(VNCConnReplayFinishedNOTIFY);
-
-
-BEGIN_EVENT_TABLE(VNCConn, wxEvtHandler)
-    EVT_TIMER (wxID_ANY, VNCConn::on_stats_timer)
-END_EVENT_TABLE();
-
 
 #ifdef LIBVNCSERVER_WITH_CLIENT_TLS
 bool VNCConn::TLS_threading_initialized;
-extern "C" 
-{
-#include <gcrypt.h>
-#include <errno.h>
-  /*
-   * gcrypt thread option wx implementation
-   */
-  static int gcry_wx_mutex_init( void **p )
-  {
-    *p = new wxMutex();
-    return 0;
-  }
-
-  static int gcry_wx_mutex_destroy( void **p )
-  {
-    delete (wxMutex*)*p;
-    return 0;
-  }
-
-  static int gcry_wx_mutex_lock( void **p )
-  {
-    if(((wxMutex*)(*p))->Lock() == wxMUTEX_NO_ERROR)
-      return 0;
-    else
-      return 1;
-  }
-
-  static int gcry_wx_mutex_unlock( void **p )
-  {
-    if(((wxMutex*)(*p))->Unlock() == wxMUTEX_NO_ERROR)
-      return 0;
-    else
-      return 1;
-  }
-
-  static const struct gcry_thread_cbs gcry_threads_wx =
-    {
-      GCRY_THREAD_OPTION_USER,
-      NULL,
-      gcry_wx_mutex_init,
-      gcry_wx_mutex_destroy,
-      gcry_wx_mutex_lock,
-      gcry_wx_mutex_unlock
-    };
-}
 #endif
 
 
@@ -126,7 +68,6 @@ VNCConn::VNCConn(void* p)
   
   cl = 0;
   multicastStatus = 0;
-  latency = -1;
 
   rfbClientLog = rfbClientErr = thread_logger;
 
@@ -144,18 +85,8 @@ VNCConn::VNCConn(void* p)
     }
 #endif
 
-  // statistics stuff
-  do_stats = false;
-  upd_bytes = 0;
-  upd_bytes_inflated = 0;
-  upd_count = 0;
-  stats_timer.SetOwner(this);
-
   // fastrequest stuff
   fastrequest_interval = 0;
-
-  // record/replay stuff
-  recording = replaying = false;
 
 }
 
@@ -166,8 +97,9 @@ VNCConn::~VNCConn()
 {
   Shutdown();
   Cleanup();
-  wxLogDebug(wxT("VNCConn %p: I'm dead!"), this);
+  __android_log_print(ANDROID_LOG_DEBUG, TAG, "VNCConn %p: I'm dead!", this);
 }
+
 
 
 
@@ -176,78 +108,18 @@ VNCConn::~VNCConn()
 */
 
 
-void VNCConn::on_stats_timer(wxTimerEvent& event)
-{
-  if(do_stats)
-    {
-      wxCriticalSectionLocker lock(mutex_stats);
-
-      if(statistics.IsEmpty())
-	statistics.Add(wxString()
-		       + wxT("UTC time,") 
-		       + wxT("conn time,")
-		       + wxT("rcvd bytes,")
-		       + wxT("rcvd bytes inflated,")
-		       + wxT("upd count,")
-		       + wxT("latency,")
-		       + wxT("nack rate,")
-		       + wxT("loss rate,")
-		       + wxT("buf size,")
-		       + wxT("buf fill,"));
-      
-      wxString sample;
-      
-      sample += (wxString() << (int)wxGetUTCTime()); // global UTC time
-      sample += wxT(",");
-      sample += (wxString() << (int)conn_stopwatch.Time()); // connection time
-      sample += wxT(",");
-      sample += (wxString() << upd_bytes); // rcvd bytes sampling
-      sample += wxT(",");
-      sample += (wxString() << upd_bytes_inflated); // rcvd bytes inflated sampling
-      sample += wxT(",");
-      sample += (wxString() << upd_count);  // number of updates sampling
-      sample += wxT(",");
-      sample += (wxString() << latency); // latency sampling
-      sample += wxT(",");
-      wxString nackrate_str = wxString::Format(wxT("%.4f"), getMCNACKedRatio());
-      nackrate_str.Replace(wxT(","), wxT("."));
-      sample += nackrate_str;            // nack rate sampling
-      sample += wxT(",");
-      wxString lossrate_str = wxString::Format(wxT("%.4f"), getMCLossRatio());
-      lossrate_str.Replace(wxT(","), wxT("."));
-      sample += lossrate_str;            // loss rate sampling
-      sample += wxT(",");
-      sample += (wxString() << getMCBufSize());  // buffer size sampling
-      sample += wxT(",");
-      sample += (wxString() << getMCBufFill());  // buffer fill sampling
-
-      // add the sample
-      statistics.Add(sample);
-		
-      // reset these
-      upd_bytes = 0;
-      upd_bytes_inflated = 0;
-      upd_count = 0;
-      latency = -1;
-
-
-      latency_test_trigger = true;
-    }
-}
-
-
 
 rfbBool VNCConn::alloc_framebuffer(rfbClient* client)
 {
   // get VNCConn object belonging to this client
   VNCConn* conn = (VNCConn*) rfbClientGetClientData(client, VNCCONN_OBJ_ID); 
 
-  wxLogDebug(wxT("VNCConn %p: alloc'ing framebuffer w:%i, h:%i"), conn, client->width, client->height);
+  __android_log_print(ANDROID_LOG_DEBUG, TAG, "VNCConn %p: alloc'ing framebuffer w:%i, h:%i", conn, client->width, client->height);
 
   // assert 32bpp, as requested with GetClient() in Init()
   if(client->format.bitsPerPixel != 32)
     {
-      conn->err.Printf(_("Failure setting up framebuffer: wrong BPP!"));
+      conn->err = "Failure setting up framebuffer: wrong BPP!";
       return false;
     }
 
@@ -263,13 +135,13 @@ rfbBool VNCConn::alloc_framebuffer(rfbClient* client)
   client->frameBuffer = (uint8_t*)calloc(1, client->width*client->height*client->format.bitsPerPixel/8);
 
   // notify our parent
-  conn->thread_post_fbresize_notify();
+ // FIXME conn->thread_post_fbresize_notify();
  
   return client->frameBuffer ? TRUE : FALSE;
 }
 
 
-
+#if 0
 
 wxThread::ExitCode VNCConn::Entry()
 {
@@ -539,7 +411,6 @@ bool VNCConn::thread_send_pointer_event(pointerEvent &event)
 
 
 
-
 bool VNCConn::thread_send_key_event(keyEvent &event)
 {
   // record here
@@ -565,33 +436,6 @@ bool VNCConn::thread_send_key_event(keyEvent &event)
 }
 
 
-
-bool VNCConn::thread_send_latency_probe()
-{
-  bool result = TRUE;
-  // latency check start
-  if(SupportsClient2Server(cl, rfbXvp)) // favor xvp over the rect check 
-    {
-      if(!latency_test_xvpmsg_sent)
-	{
-	  result = SendXvpMsg(cl, LATENCY_TEST_XVP_VER, 2);
-	  latency_test_xvpmsg_sent = true;
-	  latency_stopwatch.Start();
-	  wxLogDebug(wxT("VNCConn %p: xvp message sent to test latency"), this);
-	}
-    }
-  else  // check using special rect
-    {
-      if(!latency_test_rect_sent)
-	{
-	  result = SendFramebufferUpdateRequest(cl, LATENCY_TEST_RECT, FALSE);
-	  latency_test_rect_sent = true;
-	  latency_stopwatch.Start();
-	  wxLogDebug(wxT("VNCConn %p: fb update request sent to test latency"), this);
-	}
-    }
-  return result;
-}
 
 
 void VNCConn::thread_post_incomingconnection_notify() 
@@ -689,17 +533,6 @@ void VNCConn::thread_post_unimultichanged_notify()
 }
 
 
-void VNCConn::thread_post_replayfinished_notify()
-{
-  wxCommandEvent event(VNCConnReplayFinishedNOTIFY, wxID_ANY);
-  event.SetEventObject(this); // set sender
-  
-  // Send it
-  wxPostEvent((wxEvtHandler*)parent, event);
-}
-
-
-
 
 void VNCConn::thread_got_update(rfbClient* client,int x,int y,int w,int h)
 {
@@ -714,30 +547,7 @@ void VNCConn::thread_got_update(rfbClient* client,int x,int y,int w,int h)
       if(!conn->isMulticast())
 	conn->thread_post_update_notify(x, y, w, h);
 
-      if(conn->do_stats)
-	{
-	  wxCriticalSectionLocker lock(conn->mutex_stats);
 
-	  wxRect this_update_rect = wxRect(x,y,w,h);
-
-	  // compressed bytes
-	  conn->upd_bytes += conn->cl->bytesRcvd;
-	  conn->upd_bytes += conn->cl->multicastBytesRcvd;
-	  conn->cl->bytesRcvd = conn->cl->multicastBytesRcvd = 0;
-
-	  // uncompressed bytes
-	  conn->upd_bytes_inflated += w*h*BYTESPERPIXEL;
-
-	  // latency check, rect case
-	  if(conn->latency_test_rect_sent && this_update_rect.Contains(wxRect(LATENCY_TEST_RECT)))
-	    {
-	      conn->latency_stopwatch.Pause();
-	      conn->latency = conn->latency_stopwatch.Time();
-	      conn->latency_test_rect_sent = false;
-
-	      wxLogDebug(wxT("VNCConn %p: got update containing latency test rect, took %ims"), conn, conn->latency_stopwatch.Time());
-	    }
-	}
     }
 }
 
@@ -757,11 +567,6 @@ void VNCConn::thread_update_finished(rfbClient* client)
 
       conn->updated_rect = wxRect();
 
-      if(conn->do_stats)
-	{
-	  wxCriticalSectionLocker lock(conn->mutex_stats);
-	  conn->upd_count++;
-	}
     }
 }
 
@@ -811,23 +616,6 @@ void VNCConn::thread_bell(rfbClient *cl)
   VNCConn* conn = (VNCConn*) rfbClientGetClientData(cl, VNCCONN_OBJ_ID);
   wxLogDebug(wxT("VNCConn %p: bell"), conn);
   conn->thread_post_bell_notify();
-}
-
-
-void VNCConn::thread_handle_xvp(rfbClient *cl, uint8_t ver, uint8_t code)
-{
-  VNCConn* conn = (VNCConn*) rfbClientGetClientData(cl, VNCCONN_OBJ_ID);
-  wxLogDebug(wxT("VNCConn %p: handling xvp msg version %d code %d"), conn, ver, code);
-
-  if(conn->latency_test_xvpmsg_sent && ver == LATENCY_TEST_XVP_VER && code == rfbXvp_Fail) 
-    {
-      wxCriticalSectionLocker lock(conn->mutex_stats);
-      conn->latency_stopwatch.Pause();
-      conn->latency = conn->latency_stopwatch.Time();
-      conn->latency_test_xvpmsg_sent = false;
-      
-      wxLogDebug(wxT("VNCConn %p: got latency test xvp message back, took %ims"), conn, conn->latency_stopwatch.Time());
-    }
 }
 
 
@@ -1272,98 +1060,6 @@ bool VNCConn::sendKeyEvent(wxKeyEvent &event, bool down, bool isChar)
 
 
 
-
-void VNCConn::doStats(bool yesno)
-{
-  do_stats = yesno;
-  wxCriticalSectionLocker lock(mutex_stats);
-  if(do_stats)
-    {
-      stats_timer.Start(1000);
-      latency_test_rect_sent = latency_test_xvpmsg_sent = false; // to start sending one
-    }
-  else
-    stats_timer.Stop();
-}
-
-
-void VNCConn::resetStats()
-{
-  wxCriticalSectionLocker lock(mutex_stats);
-  statistics.Clear();
-}
-
-
-
-
-/*
-  user input record/replay stuff
- */
- bool VNCConn::replayUserInputStart(wxArrayString src, bool loop)
-{
-  wxCriticalSectionLocker lock(mutex_recordreplay);
-
-  if(!recording)
-    {
-      recordreplay_stopwatch.Start();
-      userinput_pos = 0;
-      userinput = src;
-      replay_loop = loop;
-      replaying = true;
-      return true;
-    }
-  return false;
-}
-
-
-bool VNCConn::replayUserInputStop()
-{
-  wxCriticalSectionLocker lock(mutex_recordreplay);
-
-  if(replaying) 
-    {
-      recordreplay_stopwatch.Pause();
-      userinput.Clear();
-      replaying = false;
-      return true;
-    }
-  return false;
-}
-
-
-bool VNCConn::recordUserInputStart()
-{
-   wxCriticalSectionLocker lock(mutex_recordreplay);
-  
-   if(!replaying)
-     {
-       recordreplay_stopwatch.Start();
-       userinput_pos = 0;
-       userinput.Clear();
-       recording = true;
-       return true;
-     }
-   return false;
-}
-
-
-bool VNCConn::recordUserInputStop(wxArrayString &dst)
-{
-   wxCriticalSectionLocker lock(mutex_recordreplay);
- 
-  if(recording) 
-     {
-       recordreplay_stopwatch.Pause();
-       recording = false;
-       dst = userinput; // copy over
-       return true;
-     }
-   return false;
-}
-
-
-
-
 /*
   we could use a wxBitmap directly as the framebuffer, thus being more efficient
   BUT:
@@ -1467,6 +1163,7 @@ bool VNCConn::getFrameBufferRegion(const wxRect& rect, wxBitmap& dst) const
   return true;
 }
 
+#endif
 
 
 int VNCConn::getFrameBufferWidth() const
@@ -1498,41 +1195,52 @@ int VNCConn::getFrameBufferDepth() const
 
 
 
-wxString VNCConn::getDesktopName() const
+string VNCConn::getDesktopName() const
 {
   if(cl)
-    return wxString(cl->desktopName, wxConvUTF8);
+    return string(cl->desktopName);
   else
-    return wxEmptyString;
+    return "";
 }
 
 
-wxString VNCConn::getServerHost() const
+string VNCConn::getServerHost() const
 {
   if(cl)
     {
       if(cl->listenSpecified)
-	return wxEmptyString;
+    	  return "";
       else
-	return wxString(cl->serverHost, wxConvUTF8);
+    	  return string(cl->serverHost);
     }
   else
-    return wxEmptyString;
+    return "";
 }
 
 
 
-wxString VNCConn::getServerPort() const
+string VNCConn::getServerPort() const
 {
+  stringstream ss;
   if(cl)
     if(cl->listenSpecified)
-      return wxString() << cl->listenPort;
+      ss << cl->listenPort;
     else
-      return wxString() << cl->serverPort;
-  else
-    return wxEmptyString;
+      ss << cl->serverPort;
+
+  return ss.str();
 }
 
+# if 0
+void VNCConn::clearLog()
+{
+  // since we're accessing some global things here from different threads
+  wxCriticalSectionLocker lock(mutex_log);
+  log.Clear();
+}
+#endif
+
+#if 0
 
 bool VNCConn::isMulticast() const
 {
@@ -1582,13 +1290,6 @@ double VNCConn::getMCLossRatio()
     return -1;
 }
 
-
-void VNCConn::clearLog()
-{
-  // since we're accessing some global things here from different threads
-  wxCriticalSectionLocker lock(mutex_log);
-  log.Clear();
-}
 
 
 
