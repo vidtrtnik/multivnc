@@ -27,11 +27,10 @@
 #include <stdarg.h>
 #include <cerrno>
 #include <android/log.h>
-#include <arpa/inet.h>
+
+#include "JNIVNCConn.h"
 
 #if 0
-#include "VNCConn.h"
-
 
 // use some global address
 #define VNCCONN_OBJ_ID (void*)VNCConn::thread_got_update
