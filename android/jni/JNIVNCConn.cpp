@@ -24,7 +24,7 @@
 
 
 #include <jni.h>
-#include <stdarg.h>
+#include <cstdarg>
 #include <cerrno>
 #include <sstream>
 #include <android/log.h>
@@ -76,7 +76,7 @@ VNCConn::VNCConn(void* p)
      gets initialized by libvncclient! */
   if(! TLS_threading_initialized)
     {
-      wxLogDebug(wxT("Initialized libgcrypt threading."));
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("Initialized libgcrypt threading."));
       gcry_control (GCRYCTL_SET_THREAD_CBS, &gcry_threads_wx);
       gcry_check_version (NULL);
       gcry_control (GCRYCTL_DISABLE_SECMEM, 0);
@@ -135,7 +135,7 @@ rfbBool VNCConn::alloc_framebuffer(rfbClient* client)
   client->frameBuffer = (uint8_t*)calloc(1, client->width*client->height*client->format.bitsPerPixel/8);
 
   // notify our parent
- // FIXME conn->thread_post_fbresize_notify();
+  conn->thread_post_fbresize_notify();
  
   return client->frameBuffer ? TRUE : FALSE;
 }
@@ -159,7 +159,7 @@ wxThread::ExitCode VNCConn::Entry()
 	    {
 	      if(errno==EINTR)
 		continue;
-	      wxLogDebug(wxT("VNCConn %p: vncthread listen() failed"), this);
+	     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: vncthread listen() failed"), this);
 	      thread_post_disconnect_notify();
 	      break;
 	    }
@@ -263,7 +263,7 @@ wxThread::ExitCode VNCConn::Entry()
 	    {
 	      if(errno == EINTR)
 		continue;
-	      wxLogDebug(wxT("VNCConn %p: vncthread rfbProcessServerMessage() failed"), this);
+	     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: vncthread rfbProcessServerMessage() failed"), this);
 	      thread_post_disconnect_notify();
 	      break;
 	    }
@@ -319,7 +319,7 @@ wxThread::ExitCode VNCConn::Entry()
 		  if(getMCLossRatio() > 0.5)
 		    {
 		      rfbClientLog("MultiVNC: loss ratio > 0.5, falling back to unicast\n");
-		      wxLogDebug(wxT("VNCConn %p: multicast loss ratio > 0.5, falling back to unicast"), this);
+		     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: multicast loss ratio > 0.5, falling back to unicast"), this);
 		      cl->multicastDisabled = TRUE;
 		      SendFramebufferUpdateRequest(cl, 0, 0, cl->width, cl->height, FALSE);
 		    }
@@ -347,100 +347,43 @@ wxThread::ExitCode VNCConn::Entry()
 }
 
 
-
+#endif
 
 
 bool VNCConn::thread_send_pointer_event(pointerEvent &event)
 {
-  int buttonmask = 0;
-
-  if(event.LeftIsDown())
-    buttonmask |= rfbButton1Mask;
-
-  if(event.MiddleIsDown())
-    buttonmask |= rfbButton2Mask;
-  
-  if(event.RightIsDown())
-    buttonmask |= rfbButton3Mask;
-
-  if(event.GetWheelRotation() > 0)
-    buttonmask |= rfbWheelUpMask;
-
-  if(event.GetWheelRotation() < 0)
-    buttonmask |= rfbWheelDownMask;
-
-  if(event.Entering() && ! cuttext.IsEmpty())
-    {
-      wxCriticalSectionLocker lock(mutex_cuttext); // since cuttext can be set from the main thread
-      // if encoding fails, a NULL pointer is returned!
-      if(cuttext.mb_str(wxCSConv(wxT("iso-8859-1"))))
-	{
-	  wxLogDebug(wxT("VNCConn %p: sending cuttext: '%s'"), this, cuttext.c_str());
-	  char* encoded_text = strdup(cuttext.mb_str(wxCSConv(wxT("iso-8859-1"))));
-	  SendClientCutText(cl, encoded_text, strlen(encoded_text));
-	  free(encoded_text);	  
-	}
-      else
-	wxLogDebug(wxT("VNCConn %p: sending cuttext FAILED, could not convert '%s' to ISO-8859-1"), this, cuttext.c_str());
-    }
-
-  // record here
-  {
-    wxCriticalSectionLocker lock(mutex_recordreplay);
-
-    if(recording)
-      {
-	wxString ui_now;
-	ui_now += (wxString() << (int)recordreplay_stopwatch.Time()); 
-	ui_now += wxT(",");
-	ui_now += wxT("p"); // is pointer event
-	ui_now += wxT(",");
-	ui_now += (wxString() << event.m_x);
-	ui_now += wxT(",");
-	ui_now += (wxString() << event.m_y);
-	ui_now += wxT(",");
-	ui_now += (wxString() << buttonmask);
-
-	userinput.Add(ui_now);
-      }
-  }
-
-  wxLogDebug(wxT("VNCConn %p: sending pointer event at (%d,%d), buttonmask %d"), this, event.m_x, event.m_y, buttonmask);
-  return SendPointerEvent(cl, event.m_x, event.m_y, buttonmask);
+  __android_log_print(ANDROID_LOG_DEBUG, TAG, "VNCConn %p: sending pointer event at (%d,%d), buttonmask %d", this, event.x, event.y, event.buttonMask);
+  return SendPointerEvent(cl, event.x, event.y, event.buttonMask);
 }
+
+
 
 
 
 bool VNCConn::thread_send_key_event(keyEvent &event)
 {
-  // record here
-  {
-    wxCriticalSectionLocker lock(mutex_recordreplay);
-
-    if(recording)
-      {
-	wxString ui_now;
-	ui_now += (wxString() << (int)recordreplay_stopwatch.Time()); 
-	ui_now += wxT(",");
-	ui_now += wxT("k"); // is key event
-	ui_now += wxT(",");
-	ui_now += (wxString() << event.keysym);
-	ui_now += wxT(",");
-	ui_now += (wxString() << event.down);
-
-	userinput.Add(ui_now);
-      }
-  }
-
   return SendKeyEvent(cl, event.keysym, event.down);
 }
 
 
+bool VNCConn::thread_send_cuttext()
+{
+	if( ! cuttext.empty())
+	{
+		pthread_mutex_lock(&mutex_cuttext); // since cuttext can be set from the main thread
+		__android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: sending cuttext: '%s'"), this, cuttext.c_str());
+		char* text = strdup(cuttext.c_str());
+		SendClientCutText(cl, text, strlen(text));
+		free(text);
+		pthread_mutex_unlock(&mutex_cuttext);
+	}
+}
+
 
 
 void VNCConn::thread_post_incomingconnection_notify() 
-{
-  wxLogDebug(wxT("VNCConn %p: post_incomingconnection_notify()"), this);
+{/*
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: post_incomingconnection_notify()"), this);
 
   // new NOTIFY event, we got no window id
   wxCommandEvent event(VNCConnIncomingConnectionNOTIFY, wxID_ANY);
@@ -448,12 +391,13 @@ void VNCConn::thread_post_incomingconnection_notify()
 
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 void VNCConn::thread_post_disconnect_notify() 
-{
-  wxLogDebug(wxT("VNCConn %p: post_disconnect_notify()"), this);
+{/*
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: post_disconnect_notify()"), this);
 
   // new NOTIFY event, we got no window id
   wxCommandEvent event(VNCConnDisconnectNOTIFY, wxID_ANY);
@@ -461,17 +405,19 @@ void VNCConn::thread_post_disconnect_notify()
 
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 void VNCConn::thread_post_update_notify(int x, int y, int w, int h)
 {
+	/*
   VNCConnUpdateNotifyEvent event(VNCConnUpdateNOTIFY, wxID_ANY);
   event.SetEventObject(this); // set sender
 
   // set info about what was updated
   event.rect = wxRect(x, y, w, h);
-  wxLogDebug(wxT("VNCConn %p: post_update_notify(%i,%i,%i,%i)"), this,
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: post_update_notify(%i,%i,%i,%i)"), this,
 	     event.rect.x,
 	     event.rect.y,
 	     event.rect.width,
@@ -479,12 +425,13 @@ void VNCConn::thread_post_update_notify(int x, int y, int w, int h)
   
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 void VNCConn::thread_post_fbresize_notify() 
-{
-  wxLogDebug(wxT("VNCConn %p: post_fbresize_notify() (%i, %i)"), 
+{/*
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: post_fbresize_notify() (%i, %i)"),
 	     this,
 	     getFrameBufferWidth(),
 	     getFrameBufferHeight());
@@ -495,76 +442,79 @@ void VNCConn::thread_post_fbresize_notify()
 
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 
 void VNCConn::thread_post_cuttext_notify()
 {
+	/*
   // new NOTIFY event, we got no window id
   wxCommandEvent event(VNCConnCuttextNOTIFY, wxID_ANY);
   event.SetEventObject(this); // set sender
 
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 
 void VNCConn::thread_post_bell_notify()
 {
+	/*
   // new NOTIFY event, we got no window id
   wxCommandEvent event(VNCConnBellNOTIFY, wxID_ANY);
   event.SetEventObject(this); // set sender
 
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 
 void VNCConn::thread_post_unimultichanged_notify()
-{
+{/*
   wxCommandEvent event(VNCConnUniMultiChangedNOTIFY, wxID_ANY);
   event.SetEventObject(this); // set sender
   
   // Send it
   wxPostEvent((wxEvtHandler*)parent, event);
+  */
 }
 
 
 void VNCConn::thread_got_update(rfbClient* client,int x,int y,int w,int h)
 {
 	VNCConn* conn = (VNCConn*) rfbClientGetClientData(client, VNCCONN_OBJ_ID);
-	if(! conn->GetThread()->TestDestroy())
+	//FIXME if(! conn->GetThread()->TestDestroy())
 	{
-		conn->updated_rect.Union(wxRect(x, y, w, h));
+		conn->updated_rect.Union(SimpleRect(x, y, w, h));
 
 		// single (partial) multicast updates are small, so when a big region is updated,
 		// the update notify receiver gets flooded, resulting in way too much cpu load.
 		// thus, when multicasting, we only notify for logic (whole) framebuffer updates.
 		if(!conn->isMulticast())
 			conn->thread_post_update_notify(x, y, w, h);
-
-
 	}
 }
-
 
 
 
 void VNCConn::thread_update_finished(rfbClient* client)
 {
   VNCConn* conn = (VNCConn*) rfbClientGetClientData(client, VNCCONN_OBJ_ID);
-  if(! conn->GetThread()->TestDestroy())
+//FIXME  if(! conn->GetThread()->TestDestroy())
     {
       // single (partial) multicast updates are small, so when a big region is updated,
       // the update notify receiver gets flooded, resulting in way too much cpu load.
       // thus, when multicasting, we only notify for logic (whole) framebuffer updates.
       if(conn->isMulticast() && !conn->updated_rect.IsEmpty())
-	conn->thread_post_update_notify(conn->updated_rect.x, conn->updated_rect.y, conn->updated_rect.width, conn->updated_rect.height);
+    	  conn->thread_post_update_notify(conn->updated_rect.x, conn->updated_rect.y, conn->updated_rect.width, conn->updated_rect.height);
 
-      conn->updated_rect = wxRect();
+      conn->updated_rect = SimpleRect();
 
     }
 }
@@ -574,7 +524,7 @@ void VNCConn::thread_update_finished(rfbClient* client)
 void VNCConn::thread_kbd_leds(rfbClient* cl, int value, int pad)
 {
   VNCConn* conn = (VNCConn*) rfbClientGetClientData(cl, VNCCONN_OBJ_ID); 
-  wxLogDebug(wxT("VNCConn %p: Led State= 0x%02X"), conn, value);
+  __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Led State= 0x%02X"), conn, value);
 }
 
 
@@ -584,16 +534,16 @@ void VNCConn::thread_textchat(rfbClient* cl, int value, char *text)
   switch(value)
     {
     case rfbTextChatOpen:
-      wxLogDebug(wxT("VNCConn %p: got textchat open\n"), conn);
+    	__android_log_print(ANDROID_LOG_DEBUG, TAG,"VNCConn %p: got textchat open\n", conn);
       break;
     case rfbTextChatClose:
-      wxLogDebug(wxT("VNCConn %p: got textchat close\n"), conn);
+    	__android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: got textchat close\n"), conn);
       break;
     case rfbTextChatFinished:
-      wxLogDebug(wxT("VNCConn %p: got textchat finish\n"), conn);
+    	__android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: got textchat finish\n"), conn);
       break;
     default:
-      wxLogDebug(wxT("VNCConn %p: got textchat text: '%s'\n"), conn, text);
+    	__android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: got textchat text: '%s'\n"), conn, text);
     }
 }
 
@@ -602,22 +552,24 @@ void VNCConn::thread_got_cuttext(rfbClient *cl, const char *text, int len)
 {
   VNCConn* conn = (VNCConn*) rfbClientGetClientData(cl, VNCCONN_OBJ_ID);
 
-  wxLogDebug(wxT("VNCConn %p: got cuttext: '%s'"), conn, wxString(text, wxCSConv(wxT("iso-8859-1"))).c_str());
+  __android_log_print(ANDROID_LOG_DEBUG, TAG, "VNCConn %p: got cuttext: '%s'", conn, text);
 
-  wxCriticalSectionLocker lock(conn->mutex_cuttext); // since cuttext can also be set from the main thread
-  conn->cuttext = wxString(text, wxCSConv(wxT("iso-8859-1")));
+  pthread_mutex_lock(&conn->mutex_cuttext); // since cuttext can also be set from the main thread
+  conn->cuttext = string(text);
   conn->thread_post_cuttext_notify();
+  pthread_mutex_unlock(&conn->mutex_cuttext);
 }
+
 
 
 void VNCConn::thread_bell(rfbClient *cl)
 {
   VNCConn* conn = (VNCConn*) rfbClientGetClientData(cl, VNCCONN_OBJ_ID);
-  wxLogDebug(wxT("VNCConn %p: bell"), conn);
+  __android_log_print(ANDROID_LOG_DEBUG, TAG, "VNCConn %p: bell", conn);
   conn->thread_post_bell_notify();
 }
 
-#endif
+
 
 
 // there's no per-connection log since we cannot find out which client
@@ -661,11 +613,11 @@ void VNCConn::thread_logger(const char *format, ...)
 
 bool VNCConn::Setup(char* (*getpasswdfunc)(rfbClient*))
 {
-  wxLogDebug(wxT("VNCConn %p: Setup()"), this);
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Setup()"), this);
 
   if(cl) // already set up
     {
-      wxLogDebug(wxT("VNCConn %p: Setup already done. Call Cleanup() first!"), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Setup already done. Call Cleanup() first!"), this);
       return false;
     }
 
@@ -691,24 +643,26 @@ bool VNCConn::Setup(char* (*getpasswdfunc)(rfbClient*))
   return true;
 }
 
+#endif
 
 void VNCConn::Cleanup()
 {
-  wxLogDebug(wxT( "VNCConn %p: Cleanup()"), this);
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,( "VNCConn %p: Cleanup()"), this);
 
   if(cl)
     {
-      wxLogDebug(wxT( "VNCConn %p: Cleanup() before client cleanup"), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,( "VNCConn %p: Cleanup() before client cleanup"), this);
       rfbClientCleanup(cl);
       cl = 0;
-      wxLogDebug(wxT( "VNCConn %p: Cleanup() after client cleanup"), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,( "VNCConn %p: Cleanup() after client cleanup"), this);
     }
 }
 
+#if 0
 
 bool VNCConn::Listen(int port)
 {
-  wxLogDebug(wxT("VNCConn %p: Listen() port %d"), this, port);
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Listen() port %d"), this, port);
 
   cl->listenPort = port;
 
@@ -735,11 +689,11 @@ bool VNCConn::Listen(int port)
 bool VNCConn::Init(const wxString& host, const wxString& encodings, int compresslevel, int quality, 
 		   bool multicast, int multicast_socketrecvbuf, int multicast_recvbuf)
 {
-  wxLogDebug(wxT("VNCConn %p: Init()"), this);
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Init()"), this);
 
   if(cl->frameBuffer || (GetThread() && GetThread()->IsRunning()))
     {
-      wxLogDebug(wxT("VNCConn %p: Init() already done. Call Shutdown() first!"), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Init() already done. Call Shutdown() first!"), this);
       return false;
     }
 
@@ -769,7 +723,7 @@ bool VNCConn::Init(const wxString& host, const wxString& encodings, int compress
     {
       cl = 0; //  rfbInitClient() calls rfbClientCleanup() on failure, but this does not zero the ptr
       err.Printf(_("Failure connecting to server at %s!"),  host.c_str());
-      wxLogDebug(wxT("VNCConn %p: Init() failed. Cleanup by library."), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Init() failed. Cleanup by library."), this);
       Shutdown();
       return false;
     }
@@ -816,31 +770,27 @@ bool VNCConn::Init(const wxString& host, const wxString& encodings, int compress
   return true;
 }
 
-
+#endif
 
 
 void VNCConn::Shutdown()
 {
-  wxLogDebug(wxT("VNCConn %p: Shutdown()"), this);
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Shutdown()"), this);
 
-  conn_stopwatch.Pause();
+  //conn_stopwatch.Pause();
 
-  if(GetThread() && GetThread()->IsRunning())
+//FIXME  if(GetThread() && GetThread()->IsRunning())
     {
-      wxLogDebug(wxT( "VNCConn %p: Shutdown() before vncthread delete"), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,( "VNCConn %p: Shutdown() before vncthread delete"), this);
 
-      GetThread()->Delete(); // this blocks if thread is joinable, i.e. on stack
-      wxLogDebug(wxT("VNCConn %p: Shutdown() after vncthread delete"), this);
+      //FIXME GetThread()->Delete(); // this blocks if thread is joinable, i.e. on stack
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: Shutdown() after vncthread delete"), this);
     }
   
   if(cl)
     {
-      wxLogDebug(wxT( "VNCConn %p: Shutdown() closing connection"), this);
-#ifdef __WIN32__
-      closesocket(cl->sock);
-#else
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,( "VNCConn %p: Shutdown() closing connection"), this);
       close(cl->sock);
-#endif
       // in case we called listen, canceled that, and now want to connect to some
       // host via Init()
       cl->listenSpecified = FALSE;
@@ -869,6 +819,7 @@ bool VNCConn::setDSCP(uint8_t dscp)
     return false;
 }
 
+#if 0
 
 // this simply posts the mouse event into the worker thread's input queue
 void VNCConn::sendPointerEvent(wxMouseEvent &event)
@@ -891,11 +842,11 @@ bool VNCConn::sendKeyEvent(wxKeyEvent &event, bool down, bool isChar)
 
   if(isChar)
     {
-      wxLogDebug(wxT("VNCConn %p: got CHAR key event"), this);
-      wxLogDebug(wxT("VNCConn %p:     wxkeycode:      %d"), this, event.GetKeyCode());
-      wxLogDebug(wxT("VNCConn %p:     wxkeycode char: %c"), this, event.GetKeyCode());
-      wxLogDebug(wxT("VNCConn %p:     unicode:        %d"), this, event.GetUnicodeKey());
-      wxLogDebug(wxT("VNCConn %p:     unicode char:   %c"), this, event.GetUnicodeKey()); 
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: got CHAR key event"), this);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     wxkeycode:      %d"), this, event.GetKeyCode());
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     wxkeycode char: %c"), this, event.GetKeyCode());
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     unicode:        %d"), this, event.GetUnicodeKey());
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     unicode char:   %c"), this, event.GetUnicodeKey());
 
       // get tranlated char
       kev.keysym = event.GetKeyCode();
@@ -909,11 +860,11 @@ bool VNCConn::sendKeyEvent(wxKeyEvent &event, bool down, bool isChar)
       if(kev.keysym <= 32)
 	{
 	  kev.keysym += 96;
-	  wxLogDebug(wxT("VNCConn %p: translating key to: %d"), this, kev.keysym);
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: translating key to: %d"), this, kev.keysym);
 	}
 
-      wxLogDebug(wxT("VNCConn %p: sending rfbkeysym: 0x%.3x down"), this, kev.keysym);
-      wxLogDebug(wxT("VNCConn %p: sending rfbkeysym: 0x%.3x  up"), this, kev.keysym);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: sending rfbkeysym: 0x%.3x down"), this, kev.keysym);
+     __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: sending rfbkeysym: 0x%.3x  up"), this, kev.keysym);
       
       // down, then up
       if(GetThread() && GetThread()->IsRunning())
@@ -1003,12 +954,12 @@ bool VNCConn::sendKeyEvent(wxKeyEvent &event, bool down, bool isChar)
 
       if(kev.keysym)
 	{
-	  wxLogDebug(wxT("VNCConn %p: got key %s event:"), this, down ? wxT("down") : wxT("up"));
-	  wxLogDebug(wxT("VNCConn %p:     wxkeycode:      %d"), this, event.GetKeyCode());
-	  wxLogDebug(wxT("VNCConn %p:     wxkeycode char: %c"), this, event.GetKeyCode());
-	  wxLogDebug(wxT("VNCConn %p:     unicode:        %d"), this, event.GetUnicodeKey());
-	  wxLogDebug(wxT("VNCConn %p:     unicode char:   %c"), this, event.GetUnicodeKey()); 
-	  wxLogDebug(wxT("VNCConn %p: sending rfbkeysym:  0x%.3x %s"), this, kev.keysym, down ? wxT("down") : wxT("up"));
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: got key %s event:"), this, down ? wxT("down") : wxT("up"));
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     wxkeycode:      %d"), this, event.GetKeyCode());
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     wxkeycode char: %c"), this, event.GetKeyCode());
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     unicode:        %d"), this, event.GetUnicodeKey());
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p:     unicode char:   %c"), this, event.GetUnicodeKey());
+	 __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: sending rfbkeysym:  0x%.3x %s"), this, kev.keysym, down ? wxT("down") : wxT("up"));
 
 	  kev.down = down;
 	  if(GetThread() && GetThread()->IsRunning())
@@ -1024,7 +975,7 @@ bool VNCConn::sendKeyEvent(wxKeyEvent &event, bool down, bool isChar)
 	}
     }
 
-  wxLogDebug(wxT("VNCConn %p: no matching keysym found"), this);
+ __android_log_print(ANDROID_LOG_DEBUG, TAG,("VNCConn %p: no matching keysym found"), this);
   return false; 
 
 }
@@ -1203,25 +1154,25 @@ string VNCConn::getServerPort() const
   return ss.str();
 }
 
-# if 0
 void VNCConn::clearLog()
 {
   // since we're accessing some global things here from different threads
-  wxCriticalSectionLocker lock(mutex_log);
-  log.Clear();
+  pthread_mutex_lock(&mutex_log);
+  log.clear();
+  pthread_mutex_unlock(&mutex_log);
 }
-#endif
 
-#if 0
+
 
 bool VNCConn::isMulticast() const
-{
+{/*
   if(cl && cl->multicastSock >= 0 && !cl->multicastDisabled) 
     return true;
-  else
+  else*/
     return false;
 }
 
+#if 0
 
 double VNCConn::getMCNACKedRatio()
 {

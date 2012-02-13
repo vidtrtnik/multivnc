@@ -33,6 +33,51 @@
 using namespace std;
 
 
+class SimpleRect
+{
+public:
+	int x, y, width, height;
+
+	SimpleRect(){
+		x=y=width=height=0;
+	};
+
+	SimpleRect(int x, int y, int width, int height) : x(x), y(y), width(width), height(height) {
+	};
+
+	SimpleRect& Union(const SimpleRect& rect)
+	{
+	    // ignore empty rectangles: union with an empty rectangle shouldn't extend
+	    // this one to (0, 0)
+	    if ( !width || !height )
+	    {
+	        *this = rect;
+	    }
+	    else if ( rect.width && rect.height )
+	    {
+	        int x1 = min(x, rect.x);
+	        int y1 = min(y, rect.y);
+	        int y2 = max(y + height, rect.height + rect.y);
+	        int x2 = max(x + width, rect.width + rect.x);
+
+	        x = x1;
+	        y = y1;
+	        width = x2 - x1;
+	        height = y2 - y1;
+	    }
+	    //else: we're not empty and rect is empty
+
+	    return *this;
+	}
+
+	bool IsEmpty(){
+		return (width != 0 && height != 0);
+	};
+
+};
+
+
+
 class VNCConn
 {
 public:
@@ -123,8 +168,7 @@ private:
 
   rfbClient* cl;
 
-  // TODO port wxrect
-  //wxRect updated_rect;
+  SimpleRect updated_rect;
 
   int multicastStatus;
   deque<double> multicastNACKedRatios;
@@ -166,7 +210,7 @@ private:
   {
 	  int x;
 	  int y;
-	  int pointerMask;
+	  int buttonMask;
   };
   struct keyEvent
   {
@@ -182,7 +226,7 @@ private:
   bool thread_listenmode; 
   bool thread_send_pointer_event(pointerEvent &event);
   bool thread_send_key_event(keyEvent &event);
-  bool thread_send_latency_probe();
+  bool thread_send_cuttext();
 
   // event dispatchers
   void thread_post_incomingconnection_notify();
@@ -192,7 +236,6 @@ private:
   void thread_post_cuttext_notify();
   void thread_post_bell_notify();
   void thread_post_unimultichanged_notify();
-  void thread_post_replayfinished_notify();
 
   // libvncclient callbacks
   static rfbBool alloc_framebuffer(rfbClient* client);
