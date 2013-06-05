@@ -36,7 +36,6 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.DialogInterface.OnDismissListener;
-import android.content.res.Configuration;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -521,6 +520,7 @@ public class VncCanvasActivity extends Activity {
 
 	private final static String TAG = "VncCanvasActivity";
 
+	private static VNCConn mTheConnection;
 
 	VncCanvas vncCanvas;
 	VncDatabase database;
@@ -642,20 +642,26 @@ public class VncCanvasActivity extends Activity {
 		/*
 		 * Setup canvas and conn.
 		 */
-		VNCConn conn = new VNCConn();
-		vncCanvas.initializeVncCanvas(this, inputHandler, conn); // add conn to canvas
-		conn.setCanvas(vncCanvas); // add canvas to conn. be sure to call this before init!
-		// the actual connection init
-		conn.init(connection, new Runnable() {
-			public void run() {
-				setModes();
-			}
-		});
+		if(savedInstanceState == null)
+			mTheConnection = new VNCConn();
+
+		vncCanvas.initializeVncCanvas(this, inputHandler, mTheConnection); // add conn to canvas
+		mTheConnection.setCanvas(vncCanvas); // add canvas to conn. be sure to call this before init!
+
+		if(savedInstanceState == null) {
+			// the actual connection init
+			mTheConnection.init(connection, new Runnable() {
+				public void run() {
+					setModes();
+				}
+			});
+		}
 
 
 
-
-
+		/*
+		 * Setup the zoom controls.
+		 */
 		zoomer.hide();
 		zoomer.setOnZoomInClickListener(new View.OnClickListener() {
 
@@ -758,6 +764,10 @@ public class VncCanvasActivity extends Activity {
 		}
 
 	}
+
+
+
+
 
 	/**
 	 * Set modes on start to match what is specified in the ConnectionBean;
@@ -984,6 +994,10 @@ public class VncCanvasActivity extends Activity {
 	@Override
 	protected void onDestroy() {
 		super.onDestroy();
+
+		// no memleaks please
+		mTheConnection.setCanvas(null);
+
 		if (isFinishing()) {
 			try {
 				inputHandler.shutdown();
