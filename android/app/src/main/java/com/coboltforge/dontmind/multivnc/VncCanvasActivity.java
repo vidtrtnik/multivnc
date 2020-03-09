@@ -30,6 +30,7 @@ import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.res.Configuration;
 import android.text.ClipboardManager;
 import android.content.ContentValues;
 import android.content.DialogInterface;
@@ -53,6 +54,7 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.PopupMenu;
 import android.widget.Toast;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
@@ -60,7 +62,7 @@ import android.content.Context;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 @SuppressWarnings("deprecation")
-public class VncCanvasActivity extends Activity {
+public class VncCanvasActivity extends Activity implements PopupMenu.OnMenuItemClickListener {
 
 
 	public class MightyInputHandler extends AbstractGestureInputHandler {
@@ -529,6 +531,7 @@ public class VncCanvasActivity extends Activity {
 	ViewGroup mousebuttons;
 	TouchPointView touchpoints;
 	Toast notificationToast;
+	PopupMenu fabMenu;
 
 	private SharedPreferences prefs;
 
@@ -541,7 +544,17 @@ public class VncCanvasActivity extends Activity {
 		super.onCreate(savedInstanceState);
 
 		// hide title bar, status bar
-		setupWindowSize();
+		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+				WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+		// hide system ui after softkeyboard close as per https://stackoverflow.com/a/21278040/361413
+		final View decorView = getWindow().getDecorView();
+		decorView.setOnSystemUiVisibilityChangeListener (new View.OnSystemUiVisibilityChangeListener() {
+			@Override
+			public void onSystemUiVisibilityChange(int visibility) {
+				hideSystemUI();
+			}
+		});
 
 		setContentView(R.layout.canvas);
 
@@ -559,16 +572,17 @@ public class VncCanvasActivity extends Activity {
 		inputHandler.init();
 
 		/*
-		 * setup floating action button
+		 * Setup floating action button & associated menu
 		 */
 		FloatingActionButton fab = findViewById(R.id.fab);
-		fab.setOnClickListener(new View.OnClickListener() {
-			@Override
-			public void onClick(View view) {
-			    Log.d(TAG, "FAB onClick");
-				openOptionsMenu();
-			}
+		fab.setOnClickListener(view -> {
+			Log.d(TAG, "FAB onClick");
+			prepareFabMenu(fabMenu);
+			fabMenu.show();
 		});
+		fabMenu = new PopupMenu(this, fab);
+		fabMenu.inflate(R.menu.vnccanvasactivitymenu);
+		fabMenu.setOnMenuItemClickListener(this);
 
 
 		/*
@@ -821,8 +835,14 @@ public class VncCanvasActivity extends Activity {
 		vncCanvas.onPause();
 
 		// get VNC cuttext and post to Android
-		if(vncCanvas.vncConn.getCutText() != null)
-			mClipboardManager.setText(vncCanvas.vncConn.getCutText());
+		if(vncCanvas.vncConn.getCutText() != null) {
+			try {
+				mClipboardManager.setText(vncCanvas.vncConn.getCutText());
+			} catch (Exception e) {
+				//unused
+			}
+		}
+
 	}
 
 	@Override
@@ -843,34 +863,22 @@ public class VncCanvasActivity extends Activity {
 
 	}
 
-	@SuppressLint("NewApi")
-	@Override
-	public boolean onCreateOptionsMenu(Menu menu) {
-		getMenuInflater().inflate(R.menu.vnccanvasactivitymenu, menu);
-
-		return true;
-	}
-
-
-	@Override
-	public boolean onPrepareOptionsMenu(Menu menu) {
-		try {
-			if(touchpoints.getVisibility() == View.VISIBLE) {
-				menu.findItem(R.id.itemColorMode).setVisible(false);
-				menu.findItem(R.id.itemTogglePointerHighlight).setVisible(false);
-			}
-			else {
-				menu.findItem(R.id.itemColorMode).setVisible(true);
-				menu.findItem(R.id.itemTogglePointerHighlight).setVisible(true);
-			}}
-		catch(NullPointerException e) { // when menu is initially created
+	/**
+	 * Prepare FAB popup menu.
+	 */
+	private void prepareFabMenu(PopupMenu popupMenu) {
+		Menu menu = popupMenu.getMenu();
+		if (touchpoints.getVisibility() == View.VISIBLE) {
+			menu.findItem(R.id.itemColorMode).setVisible(false);
+			menu.findItem(R.id.itemTogglePointerHighlight).setVisible(false);
+		} else {
+			menu.findItem(R.id.itemColorMode).setVisible(true);
+			menu.findItem(R.id.itemTogglePointerHighlight).setVisible(true);
 		}
-
-		return super.onPrepareOptionsMenu(menu);
 	}
 
 	@Override
-	public boolean onOptionsItemSelected(MenuItem item) {
+	public boolean onMenuItemClick(MenuItem item) {
 
 		SharedPreferences.Editor ed = prefs.edit();
 
@@ -895,8 +903,6 @@ public class VncCanvasActivity extends Activity {
 				vncCanvas.setVisibility(View.GONE);
 				touchpoints.setVisibility(View.VISIBLE);
 			}
-			// trigger onCreateOptions
-			invalidateMyOptionsMenu();
 			return true;
 
 		case R.id.itemToggleMouseButtons:
@@ -1007,8 +1013,11 @@ public class VncCanvasActivity extends Activity {
 	public boolean onKeyDown(int keyCode, KeyEvent evt) {
 		if(Utils.DEBUG()) Log.d(TAG, "Input: key down: " + evt.toString());
 
-		if (keyCode == KeyEvent.KEYCODE_MENU)
-			return super.onKeyDown(keyCode, evt);
+		if (keyCode == KeyEvent.KEYCODE_MENU) {
+			prepareFabMenu(fabMenu);
+			fabMenu.show();
+			return true;
+		}
 
 		if(keyCode == KeyEvent.KEYCODE_BACK) {
 
@@ -1214,20 +1223,28 @@ public class VncCanvasActivity extends Activity {
 	}
 
 
-	/**
-	 * Sets window size according to target device's platform.
-	 * Note that this MUST be called before adding content!
-	 */
-	private void setupWindowSize() {
-
-		// hide status bar everywhere
-		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-				WindowManager.LayoutParams.FLAG_FULLSCREEN);
-
+	@Override
+	public void onWindowFocusChanged(boolean hasFocus) {
+		super.onWindowFocusChanged(hasFocus);
+		if (hasFocus) {
+			hideSystemUI();
+		}
 	}
 
-	private void invalidateMyOptionsMenu() {
-		invalidateOptionsMenu();
+	private void hideSystemUI() {
+		// For "lean back" mode, remove SYSTEM_UI_FLAG_IMMERSIVE.
+		// Or for "sticky immersive," replace it with SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+		View decorView = getWindow().getDecorView();
+		decorView.setSystemUiVisibility(
+						View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+						// Set the content to appear under the system bars so that the
+						// content doesn't resize when the system bars hide and show.
+						| View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+						| View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+						| View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+						// Hide the nav bar and status bar
+						| View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+						| View.SYSTEM_UI_FLAG_FULLSCREEN);
 	}
 
 }

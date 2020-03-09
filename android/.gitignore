@@ -1,2 +1,17 @@
+# Generated files
 bin/
 gen/
+build/
+
+# Gradle
+.gradle/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Android Studio
+*.iml
+.idea/*
+
+# Whitelist
+!.idea/encodings.xml
